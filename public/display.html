@@ -1,0 +1,79 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Display — Now Serving</title>
+  <link rel="stylesheet" href="styles.css">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+</head>
+<body>
+  <div class="container center display-screen">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <div><strong>Kashi Vishwanath Temple — Varanasi</strong></div>
+      <div id="statusTag" class="status">Loading...</div>
+    </div>
+
+    <div style="margin-top:30px;">
+      <div>Now Serving</div>
+      <div id="now" class="timer">—</div>
+      <div style="margin-top:12px;">Next tokens will be called automatically. Please stand in the marked blocks and move on GO.</div>
+    </div>
+
+    <div style="margin-top:30px;">
+      <div>Countdown</div>
+      <div id="countdown" class="timer">00</div>
+    </div>
+  </div>
+
+<script>
+  // ----- Paste your Firebase config here -----
+  var firebaseConfig = /* YOUR_FIREBASE_CONFIG_HERE */ {apiKey: "AIzaSyBWfbs_UZuX5Gp9CzmycK13rPHV2_ciGyE",
+  authDomain: "model-ed87e.firebaseapp.com",
+  projectId: "model-ed87e",
+  storageBucket: "model-ed87e.firebasestorage.app",
+  messagingSenderId: "413355985471",
+  appId: "1:413355985471:web:76a8a0488b88544000c68a",
+  measurementId: "G-Y7DW2RRZ2E"};
+  // -------------------------------------------
+  firebase.initializeApp(firebaseConfig);
+  var db = firebase.database();
+
+  const nowEl = document.getElementById('now');
+  const statusTag = document.getElementById('statusTag');
+  const countdownEl = document.getElementById('countdown');
+
+  db.ref('system').on('value', snap => {
+    const s = snap.val() || {};
+    statusTag.textContent = s.status || '—';
+    nowEl.textContent = s.nowServing || '—';
+    countdownEl.textContent = s.timerSeconds || '—';
+  });
+
+  // Optional: live countdown
+  let timerRemaining = 0;
+  db.ref('system/timerSeconds').on('value', snap => {
+    timerRemaining = snap.val() || 15;
+  });
+
+  // If running, start counting down from timerSeconds and refresh on changes
+  function startCountdown() {
+    clearInterval(window._countdownInterval);
+    window._countdownInterval = setInterval(async () => {
+      const s = (await db.ref('system').once('value')).val() || {};
+      if (s.status === 'running') {
+        if (timerRemaining <= 0) {
+          timerRemaining = s.timerSeconds || 15;
+        }
+        countdownEl.textContent = timerRemaining;
+        timerRemaining--;
+      } else {
+        countdownEl.textContent = '--';
+      }
+    }, 1000);
+  }
+  startCountdown();
+</script>
+</body>
+</html>

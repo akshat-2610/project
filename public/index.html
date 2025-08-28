@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Vishwanath Temple — Booking</title>
+    <link rel="stylesheet" href="styles.css" />
+    <!-- QR lib -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- Firebase v8 CDN -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  </head>
+  <body class="bac">
+    <div class="container">
+      <h1>Kashi Vishwanath Temple — Booking (Demo)</h1>
+      <p>
+        Book a short time window. This is a demo for a college prototype of a
+        token-based crowd flow system.
+      </p>
+
+      <div class="form-row">
+        <label for="phone">Phone number</label>
+        <input id="phone" placeholder="Enter phone (10 digits)" />
+      </div>
+
+      <div class="form-row">
+        <label for="slot">Choose slot</label>
+        <select id="slot">
+          <option>09:00-09:15</option>
+          <option>09:15-09:30</option>
+          <option>09:30-09:45</option>
+          <option>09:45-10:00</option>
+        </select>
+      </div>
+
+      <div class="form-row buttons">
+        <button id="bookBtn">Book Token</button>
+        <button id="showAll">Show my bookings (console)</button>
+      </div>
+
+      <div id="result"></div>
+
+      <hr />
+      <h3>How to use at gate</h3>
+      <p>
+        Volunteer checks token number & time window and allows entry manually.
+        Display screen shows now-serving token.
+      </p>
+    </div>
+
+    <script type="module">
+      // Import the functions you need from the SDKs you need
+//import { initializeApp } from "firebase/app";
+//import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyBWfbs_UZuX5Gp9CzmycK13rPHV2_ciGyE",
+  authDomain: "model-ed87e.firebaseapp.com",
+  databaseURL: "https://model-ed87e-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "model-ed87e",
+  storageBucket: "model-ed87e.firebasestorage.app",
+  messagingSenderId: "413355985471",
+  appId: "1:413355985471:web:76a8a0488b88544000c68a",
+  measurementId: "G-Y7DW2RRZ2E"
+};
+
+firebase.initializeApp(firebaseConfig);
+  var db = firebase.database();
+
+      const bookBtn = document.getElementById("bookBtn");
+      const phoneEl = document.getElementById("phone");
+      const slotEl = document.getElementById("slot");
+      const result = document.getElementById("result");
+
+      function pad(n, width = 3) {
+        return String(n).padStart(width, "0");
+      }
+
+      bookBtn.addEventListener("click", async () => {
+        const phone = phoneEl.value.trim();
+        const slot = slotEl.value;
+        if (!/^\d{10}$/.test(phone)) {
+          alert("Enter valid 10-digit phone");
+          return;
+        }
+
+        // generate a token number incrementally (read current count)
+        const countRef = db.ref("meta/nextToken");
+        const snapshot = await countRef.once("value");
+        let next = snapshot.val() || 1;
+        const token = pad(next, 3);
+        // save booking
+        const booking = {
+          phone,
+          slot,
+          token,
+          time: Date.now(),
+        };
+        await db.ref("bookings/" + token).set(booking);
+        // increment meta
+        await countRef.set(next + 1);
+
+        // show token + QR
+        result.innerHTML = `
+      <div class="token-card">
+        <div>
+          <div>Token</div>
+          <div class="big-number">${token}</div>
+          <div>Slot: ${slot}</div>
+          <div>Phone: ${phone}</div>
+        </div>
+        <div id="qrcode"></div>
+      </div>
+    `;
+        // create QR (token info)
+        new QRCode(document.getElementById("qrcode"), {
+          text: JSON.stringify({ token, phone, slot }),
+          width: 110,
+          height: 110,
+        });
+      });
+
+      // debug: show all bookings in console
+      document.getElementById("showAll").addEventListener("click", async () => {
+        const snap = await db.ref("bookings").once("value");
+        console.log("bookings:", snap.val());
+        alert("bookings logged to console");
+      });
+    </script>
+  </body>
+</html>

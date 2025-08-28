@@ -1,0 +1,177 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Temple Admin — Control Panel</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>Admin Panel — Vishwanath Demo</h1>
+
+    <div class="form-row">
+      <label>System status</label>
+      <div><span id="statusBadge" class="status">loading...</span></div>
+    </div>
+
+    <div class="form-row">
+      <label>Timer seconds per hop</label>
+      <input id="timerSeconds" type="number" min="5" max="120" />
+    </div>
+
+    <div class="form-row">
+      <label>Slot capacity</label>
+      <input id="slotCapacity" type="number" min="1" max="500" />
+    </div>
+
+    <div class="form-row buttons">
+      <button id="startBtn">Start</button>
+      <button id="pauseBtn">Pause</button>
+      <button id="stopBtn">Stop</button>
+      <button id="nextBtn">Next Token</button>
+    </div>
+
+    <div class="form-row">
+      <h3>Now Serving: <span id="nowServing">—</span></h3>
+    </div>
+
+    <div>
+      <h3>Bookings (quick view)</h3>
+      <pre id="bookingsPre" style="max-height:200px; overflow:auto; background:#f5f5f5; padding:10px;"></pre>
+    </div>
+  </div>
+
+<script>
+  // ----- Paste your Firebase config here -----
+  var firebaseConfig = /* YOUR_FIREBASE_CONFIG_HERE */ {apiKey: "AIzaSyBWfbs_UZuX5Gp9CzmycK13rPHV2_ciGyE",
+  authDomain: "model-ed87e.firebaseapp.com",
+  projectId: "model-ed87e",
+  databaseURL: "https://model-ed87e-default-rtdb.asia-southeast1.firebasedatabase.app",
+  storageBucket: "model-ed87e.firebasestorage.app",
+  messagingSenderId: "413355985471",
+  appId: "1:413355985471:web:76a8a0488b88544000c68a",
+  measurementId: "G-Y7DW2RRZ2E"};
+  // -------------------------------------------
+  firebase.initializeApp(firebaseConfig);
+  var db = firebase.database();
+
+  
+
+  const statusBadge = document.getElementById('statusBadge');
+  const timerSecondsInput = document.getElementById('timerSeconds');
+  const slotCapacityInput = document.getElementById('slotCapacity');
+  const startBtn = document.getElementById('startBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  const nowServing = document.getElementById('nowServing');
+  const bookingsPre = document.getElementById('bookingsPre');
+
+  // initialize system node if absent
+  db.ref('system').once('value').then(snap => {
+    if (!snap.exists()) {
+      db.ref('system').set({ nowServing: null, status: 'stopped', timerSeconds: 15, slotCapacity: 50 });
+    }
+  });
+
+  // listen to system changes
+  db.ref('system').on('value', snap => {
+    const s = snap.val() || {};
+    statusBadge.textContent = s.status || '—';
+    timerSecondsInput.value = s.timerSeconds || 15;
+    slotCapacityInput.value = s.slotCapacity || 50;
+    nowServing.textContent = s.nowServing || '—';
+  });
+
+  // bookings list
+  db.ref('bookings').on('value', snap => {
+    bookingsPre.textContent = JSON.stringify(snap.val() || {}, null, 2);
+  });
+
+  startBtn.onclick = () => db.ref('system/status').set('running');
+  pauseBtn.onclick = () => db.ref('system/status').set('paused');
+  stopBtn.onclick = () => db.ref('system/status').set('stopped');
+  nextBtn.onclick = async () => {
+    // find next token by reading meta.nextToken and subtracting, or iterate bookings to find lowest unserved token
+    const sys = (await db.ref('system').once('value')).val() || {};
+    let served = sys.nowServing ? parseInt(sys.nowServing) : 0;
+    const next = served + 1;
+    const tokenKey = String(next).padStart(3,'0');
+    // set nowServing if exists
+    const booking = (await db.ref('bookings/' + tokenKey).once('value')).val();
+    if (booking) {
+      await db.ref('system/nowServing').set(tokenKey);
+    } else {
+      alert('No booking found for token ' + tokenKey);
+    }
+  };
+
+  // update timerSeconds & slotCapacity on change
+  timerSecondsInput.addEventListener('change', () => {
+    db.ref('system/timerSeconds').set(parseInt(timerSecondsInput.value));
+  });
+  slotCapacityInput.addEventListener('change', () => {
+    db.ref('system/slotCapacity').set(parseInt(slotCapacityInput.value));
+  });
+
+  // Auto advancing loop (simple demo): when running, after every timerSeconds we'll advance to next token automatically.
+  // This is a simple client-side automation run by admin page (for demo). In production you'd have a server/controller.
+  let autoLoop = null;
+  db.ref('system/status').on('value', snap => {
+    const st = snap.val();
+    if (st === 'running') {
+      // start loop
+      if (!autoLoop) {
+        autoLoop = setInterval(async () => {
+          // advance next
+          const sysSnap = await db.ref('system').once('value');
+          const s = sysSnap.val() || {};
+          let current = s.nowServing ? parseInt(s.nowServing) : 0;
+          const next = current + 1;
+          const tokenKey = String(next).padStart(3,'0');
+          const booking = (await db.ref('bookings/' + tokenKey).once('value')).val();
+          if (booking) {
+            await db.ref('system/nowServing').set(tokenKey);
+          } else {
+            // if no next booking, stop
+            clearInterval(autoLoop);
+            autoLoop = null;
+            db.ref('system/status').set('stopped');
+            alert('No more bookings; stopped.');
+          }
+        }, (db.ref('system/timerSeconds').once('value').then(snap=>snap.val() || 15), 1000 * 15)); // default 15s
+        // Note: we will adjust interval below when timerSeconds changes
+      }
+    } else {
+      if (autoLoop) { clearInterval(autoLoop); autoLoop = null; }
+    }
+  });
+
+  // update interval when timerSeconds changes
+  db.ref('system/timerSeconds').on('value', snap => {
+    const secs = snap.val() || 15;
+    if (autoLoop) {
+      clearInterval(autoLoop); autoLoop = setInterval(async () => {
+        const sysSnap = await db.ref('system').once('value');
+        const s = sysSnap.val() || {};
+        let current = s.nowServing ? parseInt(s.nowServing) : 0;
+        const next = current + 1;
+        const tokenKey = String(next).padStart(3,'0');
+        const booking = (await db.ref('bookings/' + tokenKey).once('value')).val();
+        if (booking) {
+          await db.ref('system/nowServing').set(tokenKey);
+        } else {
+          clearInterval(autoLoop);
+          autoLoop = null;
+          db.ref('system/status').set('stopped');
+          alert('No more bookings; stopped.');
+        }
+      }, secs * 1000);
+    }
+  });
+
+</script>
+</body>
+</html>
